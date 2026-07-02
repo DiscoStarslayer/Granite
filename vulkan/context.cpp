@@ -1644,7 +1644,8 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 		ADD_CHAIN(ext.image_compression_control_swapchain_features, IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT);
 	}
 
-	if (has_extension(VK_NV_LOW_LATENCY_2_EXTENSION_NAME))
+	const bool disable_low_latency2_nv = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_NV_LOW_LATENCY2", false);
+	if (!disable_low_latency2_nv && has_extension(VK_NV_LOW_LATENCY_2_EXTENSION_NAME))
 	{
 		enabled_extensions.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
 		ext.supports_low_latency2_nv = true;
@@ -1713,23 +1714,30 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 
 	if ((flags & CONTEXT_CREATION_ENABLE_ADVANCED_WSI_BIT) != 0 && requires_swapchain)
 	{
-		if (has_extension(VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
+		const bool disable_present_id = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_PRESENT_ID", false);
+		const bool disable_present_id2 = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_PRESENT_ID2", false);
+		const bool disable_present_wait = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_PRESENT_WAIT", false);
+		const bool disable_present_wait2 = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_PRESENT_WAIT2", false);
+		const bool disable_present_timing = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_PRESENT_TIMING", false);
+		const bool disable_swapchain_maintenance1 = Util::get_environment_bool("GRANITE_VULKAN_DISABLE_SWAPCHAIN_MAINTENANCE1", false);
+
+		if (!disable_present_id && !disable_present_id2 && has_extension(VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_id2_features, PRESENT_ID_2_FEATURES_KHR);
 		}
-		else if (has_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME))
+		else if (!disable_present_id && has_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_id_features, PRESENT_ID_FEATURES_KHR);
 		}
 
-		if (has_extension(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
+		if (!disable_present_wait && !disable_present_wait2 && has_extension(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_wait2_features, PRESENT_WAIT_2_FEATURES_KHR);
 		}
-		else if (has_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
+		else if (!disable_present_wait && has_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_wait_features, PRESENT_WAIT_FEATURES_KHR);
@@ -1737,14 +1745,14 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
 
 #if !defined(ANDROID) || !defined(HAVE_SWAPPY)
 		// Assume that swappy takes care of all this on Android.
-		if (has_extension(VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
+		if (!disable_present_timing && has_extension(VK_EXT_PRESENT_TIMING_EXTENSION_NAME))
 		{
 			enabled_extensions.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
 			ADD_CHAIN(ext.present_timing_features, PRESENT_TIMING_FEATURES_EXT);
 		}
 #endif
 
-		if (ext.supports_surface_maintenance1)
+		if (!disable_swapchain_maintenance1 && ext.supports_surface_maintenance1)
 		{
 			if (has_extension(VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME))
 			{
