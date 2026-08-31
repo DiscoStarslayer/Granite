@@ -27,8 +27,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
-#include <time.h>
 #include <errno.h>
+#include <time.h>
 #endif
 
 #ifdef __SSE2__
@@ -138,6 +138,21 @@ void sleep_until_nsecs(int64_t timepoint)
 		_mm_pause();
 #endif
 	}
+#elif defined(__APPLE__)
+	// Darwin does not provide clock_nanosleep(). Recompute the relative delay
+	// after signals so the sleep still targets the requested monotonic time.
+	for (;;)
+	{
+		const int64_t remaining = timepoint - get_current_time_nsecs();
+		if (remaining <= 0)
+			break;
+
+		struct timespec ts = {};
+		ts.tv_sec = remaining / 1000000000ll;
+		ts.tv_nsec = remaining % 1000000000ll;
+		if (nanosleep(&ts, nullptr) == 0 || errno != EINTR)
+			break;
+	}
 #else
 	constexpr auto timebase = CLOCK_MONOTONIC;
 	struct timespec ts = {};
@@ -145,7 +160,9 @@ void sleep_until_nsecs(int64_t timepoint)
 	ts.tv_nsec = timepoint % 1000000000ll;
 	// Linux does not support clock_nanosleep with MONOTONIC_RAW :(
 	int ret;
-	while ((ret = clock_nanosleep(timebase, TIMER_ABSTIME, &ts, nullptr)) == EINTR) {}
+	while ((ret = clock_nanosleep(timebase, TIMER_ABSTIME, &ts, nullptr)) == EINTR)
+	{
+	}
 #endif
 }
 
@@ -159,4 +176,4 @@ double Timer::end()
 	auto nt = get_current_time_nsecs();
 	return double(nt - t) * 1e-9;
 }
-}
+} // namespace Util
