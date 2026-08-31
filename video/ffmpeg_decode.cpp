@@ -1107,11 +1107,17 @@ bool VideoDecoder::Impl::init_video_decoder_post_device()
 		if (!hw.init_codec_context(video.av_codec, device, video.av_ctx, opts.hwdevice, false))
 			LOGW("Failed to init hardware decode context. Falling back to software.\n");
 
-		if (avcodec_open2(video.av_ctx, video.av_codec, nullptr) < 0)
+		AVDictionary *av_opts = nullptr;
+		if (opts.threads)
+			av_dict_set_int(&av_opts, "threads", opts.threads, 0);
+
+		if (avcodec_open2(video.av_ctx, video.av_codec, &av_opts) < 0)
 		{
 			LOGE("Failed to open codec.\n");
 			return false;
 		}
+
+		av_dict_free(&av_opts);
 	}
 	else if (using_pyrowave)
 	{
@@ -1677,7 +1683,7 @@ void VideoDecoder::Impl::update_plane_resources(DecodedImage &img, bool need_per
 			{
 				img.color_space = VK_COLOR_SPACE_HDR10_ST2084_EXT;
 			}
-			else if (active_transfer_function == AVCOL_TRC_BT709)
+			else if (active_transfer_function == AVCOL_TRC_BT709 || active_transfer_function == AVCOL_TRC_UNSPECIFIED)
 			{
 				// The "default". Technically I don't think BT709 TRC == sRGB TRC.
 				// SRGB_NONLINEAR_KHR is the "vague" gamma 2.2 thing.
@@ -2144,6 +2150,9 @@ void VideoDecoder::Impl::process_video_frame_in_task(unsigned frame, AVFrame *av
 	img.state = ImageState::Ready;
 	img.done_ts = Util::get_current_time_nsecs();
 	cond.notify_all();
+
+	// Stop forcing forward progress when we've decoded a frame.
+	acquire_blocking = false;
 }
 
 void VideoDecoder::Impl::process_video_frame(AVFrame *av_frame, int64_t pts)
@@ -2667,10 +2676,23 @@ bool VideoDecoder::Impl::acquire_video_frame(VideoFrame &frame, int timeout_ms)
 
 	std::unique_lock<std::mutex> holder{lock};
 
-	// Wake up decode thread to make sure it knows acquire thread
-	// is blocking and awaits forward progress.
-	acquire_blocking = true;
-	cond.notify_one();
+	bool has_forward_progress = false;
+	for (auto &queue : video_queue)
+	{
+		if (queue.state == ImageState::Locked || queue.state == ImageState::Ready)
+		{
+			has_forward_progress = true;
+			break;
+		}
+	}
+
+	if (!has_forward_progress)
+	{
+		// Wake up decode thread to make sure it knows acquire thread
+		// is blocking and awaits forward progress.
+		acquire_blocking = true;
+		cond.notify_one();
+	}
 
 	int index = -1;
 

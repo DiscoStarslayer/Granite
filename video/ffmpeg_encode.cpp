@@ -673,6 +673,7 @@ bool VideoEncoder::Impl::encode_frame(const uint8_t *buffer, const PlaneLayout *
 	// Ideally we'd be able to set the data pointers directly in AVFrame,
 	// but encoder reference buffers probably require a copy anyways ...
 	unsigned pix_size = options.format != VideoEncoder::Format::NV12 &&
+	                    options.format != VideoEncoder::Format::YUV444P &&
 	                    options.format != VideoEncoder::Format::YUV420P ? 2 : 1;
 	const auto *src_luma = buffer + planes[0].offset;
 	const auto *src_chroma = buffer + planes[1].offset;
@@ -1226,6 +1227,17 @@ bool VideoEncoder::Impl::init_video_codec_av(const AVCodec *codec)
 			av_dict_set_int(&opts, "async_depth", 1, 0);
 	}
 
+	bool is_ffv1 = strcmp(options.encoder, "ffv1") == 0;
+	if (is_ffv1)
+	{
+		av_dict_set_int(&opts, "level", 3, 0);
+		if (options.threads)
+		{
+			av_dict_set_int(&opts, "slices", std::min<uint32_t>(16u, options.threads), 0);
+			av_dict_set_int(&opts, "threads", std::min<uint32_t>(16u, options.threads), 0);
+		}
+	}
+
 	video.av_ctx->bit_rate = options.bitrate_kbits * 1000;
 	video.av_ctx->rc_buffer_size = options.vbv_size_kbits * 1000;
 	video.av_ctx->rc_max_rate = options.max_bitrate_kbits * 1000;
@@ -1322,7 +1334,6 @@ bool VideoEncoder::Impl::init_video_codec_av(const AVCodec *codec)
 		case AV_CODEC_ID_AV1:
 			return PYRO_VIDEO_CODEC_AV1;
 		default:
-			LOGW("Unknown video codec %d.\n", id);
 			return PYRO_VIDEO_CODEC_NONE;
 		}
 	};
